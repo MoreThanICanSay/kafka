@@ -50,6 +50,7 @@ public final class ClientUtils {
 
     public static List<InetSocketAddress> parseAndValidateAddresses(List<String> urls, ClientDnsLookup clientDnsLookup) {
         List<InetSocketAddress> addresses = new ArrayList<>();
+        // 会和 配置的 bootstrap.servers 维护一个 Socket
         for (String url : urls) {
             if (url != null && !url.isEmpty()) {
                 try {

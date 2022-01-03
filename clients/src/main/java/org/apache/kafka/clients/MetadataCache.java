@@ -16,24 +16,12 @@
  */
 package org.apache.kafka.clients;
 
-import org.apache.kafka.common.Cluster;
-import org.apache.kafka.common.ClusterResource;
-import org.apache.kafka.common.Node;
-import org.apache.kafka.common.PartitionInfo;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.*;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 
 import java.net.InetSocketAddress;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -45,7 +33,7 @@ import java.util.stream.Collectors;
 public class MetadataCache {
     private final String clusterId;
     private final Map<Integer, Node> nodes;
-    private final Set<String> unauthorizedTopics;
+    private final Set<String> unauthorizedTopics;// 添加未经授权的主题
     private final Set<String> invalidTopics;
     private final Set<String> internalTopics;
     private final Node controller;
@@ -65,8 +53,9 @@ public class MetadataCache {
         this(clusterId, nodes, partitions, unauthorizedTopics, invalidTopics, internalTopics, controller, topicIds, null);
     }
 
+    // 第一次 集合都是空的
     private MetadataCache(String clusterId,
-                          Map<Integer, Node> nodes,
+                          Map<Integer, Node> nodes, // socket 通信地址
                           Collection<PartitionMetadata> partitions,
                           Set<String> unauthorizedTopics,
                           Set<String> invalidTopics,

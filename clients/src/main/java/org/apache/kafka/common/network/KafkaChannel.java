@@ -399,6 +399,7 @@ public class KafkaChannel implements AutoCloseable {
             receive = new NetworkReceive(maxReceiveSize, id, memoryPool);
         }
 
+        // 一直在读取数据
         long bytesReceived = receive(this.receive);
 
         if (this.receive.requiredMemoryAmountKnown() && !this.receive.memoryAllocated() && isInMutableState()) {
@@ -413,6 +414,7 @@ public class KafkaChannel implements AutoCloseable {
     }
 
     public NetworkReceive maybeCompleteReceive() {
+        // 是否读完一个完整的响应消息
         if (receive != null && receive.complete()) {
             receive.payload().rewind();
             NetworkReceive result = receive;

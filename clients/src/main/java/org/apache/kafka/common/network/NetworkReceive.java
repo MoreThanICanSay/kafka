@@ -91,18 +91,23 @@ public class NetworkReceive implements Receive {
 
     public long readFrom(ScatteringByteChannel channel) throws IOException {
         int read = 0;
+        // this.size = ByteBuffer.allocate(4); ByteBuffer 类型
         if (size.hasRemaining()) {
             int bytesRead = channel.read(size);
             if (bytesRead < 0)
                 throw new EOFException();
             read += bytesRead;
+            // 一直要读到这个size没有剩余的空间
+            // 说明已经读取到了一个4字节的int类型的数了
             if (!size.hasRemaining()) {
                 size.rewind();
+                // 拿到int的值（即协议中接下来消息的长度）
                 int receiveSize = size.getInt();
                 if (receiveSize < 0)
                     throw new InvalidReceiveException("Invalid receive (size = " + receiveSize + ")");
                 if (maxSize != UNLIMITED && receiveSize > maxSize)
                     throw new InvalidReceiveException("Invalid receive (size = " + receiveSize + " larger than " + maxSize + ")");
+                // 将消息长度赋值给请求缓存大小
                 requestedBufferSize = receiveSize; //may be 0 for some payloads (SASL)
                 if (receiveSize == 0) {
                     buffer = EMPTY_BUFFER;
@@ -110,6 +115,7 @@ public class NetworkReceive implements Receive {
             }
         }
         if (buffer == null && requestedBufferSize != -1) { //we know the size we want but havent been able to allocate it yet
+            // 尝试分配（消息长度）大小的空间
             buffer = memoryPool.tryAllocate(requestedBufferSize);
             if (buffer == null)
                 log.trace("Broker low on memory - could not allocate buffer of size {} for source {}", requestedBufferSize, source);

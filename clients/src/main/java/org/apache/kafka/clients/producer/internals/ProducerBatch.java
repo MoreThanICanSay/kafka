@@ -21,15 +21,7 @@ import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.RecordBatchTooLargeException;
 import org.apache.kafka.common.header.Header;
-import org.apache.kafka.common.record.AbstractRecords;
-import org.apache.kafka.common.record.CompressionRatioEstimator;
-import org.apache.kafka.common.record.CompressionType;
-import org.apache.kafka.common.record.MemoryRecords;
-import org.apache.kafka.common.record.MemoryRecordsBuilder;
-import org.apache.kafka.common.record.MutableRecordBatch;
-import org.apache.kafka.common.record.Record;
-import org.apache.kafka.common.record.RecordBatch;
-import org.apache.kafka.common.record.TimestampType;
+import org.apache.kafka.common.record.*;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.utils.ProducerIdAndEpoch;
 import org.apache.kafka.common.utils.Time;
@@ -37,12 +29,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Deque;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -103,6 +90,7 @@ public final class ProducerBatch {
      * @return The RecordSend corresponding to this record or null if there isn't sufficient room.
      */
     public FutureRecordMetadata tryAppend(long timestamp, byte[] key, byte[] value, Header[] headers, Callback callback, long now) {
+        // 校验空间
         if (!recordsBuilder.hasRoomFor(timestamp, key, value, headers)) {
             return null;
         } else {
@@ -117,6 +105,7 @@ public final class ProducerBatch {
                                                                    Time.SYSTEM);
             // we have to keep every future returned to the users in case the batch needs to be
             // split to several new batches and resent.
+            // 我们必须将每个未来都返回给用户，以防需要将批次拆分为几个新批次并重新发送。
             thunks.add(new Thunk(callback, future));
             this.recordCount++;
             return future;
@@ -223,6 +212,7 @@ public final class ProducerBatch {
         RuntimeException topLevelException,
         Function<Integer, RuntimeException> recordExceptions
     ) {
+        // 是否有异常 判断状态
         final FinalState tryFinalState = (topLevelException == null) ? FinalState.SUCCEEDED : FinalState.FAILED;
         if (tryFinalState == FinalState.SUCCEEDED) {
             log.trace("Successfully produced messages to {} with base offset {}.", topicPartition, baseOffset);
@@ -230,7 +220,9 @@ public final class ProducerBatch {
             log.trace("Failed to produce messages to {} with base offset {}.", topicPartition, baseOffset, topLevelException);
         }
 
+        // finalState 最后的状态就是 tryFinalState
         if (this.finalState.compareAndSet(null, tryFinalState)) {
+            // 处理 回调
             completeFutureAndFireCallbacks(baseOffset, logAppendTime, recordExceptions);
             return true;
         }
@@ -266,9 +258,11 @@ public final class ProducerBatch {
                 Thunk thunk = thunks.get(i);
                 if (thunk.callback != null) {
                     if (recordExceptions == null) {
+                        // 没异常 返回 元数据 信息
                         RecordMetadata metadata = thunk.future.value();
                         thunk.callback.onCompletion(metadata, null);
                     } else {
+                        // 有异常 返回 异常
                         RuntimeException exception = recordExceptions.apply(i);
                         thunk.callback.onCompletion(null, exception);
                     }
@@ -356,6 +350,7 @@ public final class ProducerBatch {
 
     /**
      * A callback and the associated FutureRecordMetadata argument to pass to it.
+     * 一个回调和关联的 FutureRecordMetadata 参数传递给它。
      */
     final private static class Thunk {
         final Callback callback;

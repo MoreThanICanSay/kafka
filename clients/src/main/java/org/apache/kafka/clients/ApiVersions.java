@@ -28,6 +28,8 @@ import java.util.Optional;
  * Maintains node api versions for access outside of NetworkClient (which is where the information is derived).
  * The pattern is akin to the use of {@link Metadata} for topic metadata.
  *
+ * 维护节点 api 版本，以便在 NetworkClient 之外进行访问（这是获取信息的地方）。该模式类似于将 {@link Metadata} 用于主题元数据。
+ *
  * NOTE: This class is intended for INTERNAL usage only within Kafka.
  */
 public class ApiVersions {

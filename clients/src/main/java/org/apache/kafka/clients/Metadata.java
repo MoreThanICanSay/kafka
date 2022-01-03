@@ -16,11 +16,7 @@
  */
 package org.apache.kafka.clients;
 
-import org.apache.kafka.common.Cluster;
-import org.apache.kafka.common.KafkaException;
-import org.apache.kafka.common.Node;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.*;
 import org.apache.kafka.common.errors.InvalidMetadataException;
 import org.apache.kafka.common.errors.InvalidTopicException;
 import org.apache.kafka.common.errors.TopicAuthorizationException;
@@ -33,15 +29,7 @@ import org.slf4j.Logger;
 
 import java.io.Closeable;
 import java.net.InetSocketAddress;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Supplier;
 
 import static org.apache.kafka.common.record.RecordBatch.NO_PARTITION_LEADER_EPOCH;
@@ -238,6 +226,7 @@ public class Metadata implements Closeable {
     public synchronized void bootstrap(List<InetSocketAddress> addresses) {
         this.needFullUpdate = true;
         this.updateVersion += 1;
+        // 集群信息放到元数据缓存
         this.cache = MetadataCache.bootstrap(addresses);
     }
 
@@ -394,11 +383,8 @@ public class Metadata implements Closeable {
         if (hasReliableLeaderEpoch && partitionMetadata.leaderEpoch.isPresent()) {
             int newEpoch = partitionMetadata.leaderEpoch.get();
             Integer currentEpoch = lastSeenLeaderEpochs.get(tp);
-            if (topicId != null && !topicId.equals(oldTopicId)) {
-                // If the new topic ID is valid and different from the last seen topic ID, update the metadata.
-                // Between the time that a topic is deleted and re-created, the client may lose track of the
-                // corresponding topicId (i.e. `oldTopicId` will be null). In this case, when we discover the new
-                // topicId, we allow the corresponding leader epoch to override the last seen value.
+            if (topicId != null && oldTopicId != null && !topicId.equals(oldTopicId)) {
+                // If both topic IDs were valid and the topic ID changed, update the metadata
                 log.info("Resetting the last seen epoch of partition {} to {} since the associated topicId changed from {} to {}",
                          tp, newEpoch, oldTopicId, topicId);
                 lastSeenLeaderEpochs.put(tp, newEpoch);

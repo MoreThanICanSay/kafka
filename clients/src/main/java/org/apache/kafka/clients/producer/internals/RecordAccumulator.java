@@ -16,45 +16,25 @@
  */
 package org.apache.kafka.clients.producer.internals;
 
-import java.nio.ByteBuffer;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Deque;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.kafka.clients.ApiVersions;
 import org.apache.kafka.clients.producer.Callback;
-import org.apache.kafka.common.utils.ProducerIdAndEpoch;
-import org.apache.kafka.common.Cluster;
-import org.apache.kafka.common.KafkaException;
-import org.apache.kafka.common.MetricName;
-import org.apache.kafka.common.Node;
-import org.apache.kafka.common.PartitionInfo;
-import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.*;
 import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.metrics.Measurable;
 import org.apache.kafka.common.metrics.MetricConfig;
 import org.apache.kafka.common.metrics.Metrics;
-import org.apache.kafka.common.record.AbstractRecords;
-import org.apache.kafka.common.record.CompressionRatioEstimator;
-import org.apache.kafka.common.record.CompressionType;
-import org.apache.kafka.common.record.MemoryRecords;
-import org.apache.kafka.common.record.MemoryRecordsBuilder;
-import org.apache.kafka.common.record.Record;
-import org.apache.kafka.common.record.RecordBatch;
-import org.apache.kafka.common.record.TimestampType;
+import org.apache.kafka.common.record.*;
 import org.apache.kafka.common.utils.CopyOnWriteMap;
 import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.common.utils.ProducerIdAndEpoch;
 import org.apache.kafka.common.utils.Time;
 import org.slf4j.Logger;
+
+import java.nio.ByteBuffer;
+import java.util.*;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * This class acts as a queue that accumulates records into {@link MemoryRecords}
@@ -188,21 +168,25 @@ public final class RecordAccumulator {
                                      long nowMs) throws InterruptedException {
         // We keep track of the number of appending thread to make sure we do not miss batches in
         // abortIncompleteBatches().
+        // +1 操作
         appendsInProgress.incrementAndGet();
         ByteBuffer buffer = null;
         if (headers == null) headers = Record.EMPTY_HEADERS;
         try {
             // check if we have an in-progress batch
+            // 内存里面 是否有 这个分区下的消息
             Deque<ProducerBatch> dq = getOrCreateDeque(tp);
             synchronized (dq) {
                 if (closed)
                     throw new KafkaException("Producer closed while send in progress");
+                // 往队列里面加数据
                 RecordAppendResult appendResult = tryAppend(timestamp, key, value, headers, callback, dq, nowMs);
                 if (appendResult != null)
                     return appendResult;
             }
 
             // we don't have an in-progress record batch try to allocate a new batch
+            // 第一次
             if (abortOnNewBatch) {
                 // Return a result that will cause another call to append.
                 return new RecordAppendResult(null, false, false, true);
@@ -211,6 +195,7 @@ public final class RecordAccumulator {
             byte maxUsableMagic = apiVersions.maxUsableProduceMagic();
             int size = Math.max(this.batchSize, AbstractRecords.estimateSizeInBytesUpperBound(maxUsableMagic, compression, key, value, headers));
             log.trace("Allocating a new {} byte message buffer for topic {} partition {} with remaining timeout {}ms", size, tp.topic(), tp.partition(), maxTimeToBlock);
+            // 申请内存
             buffer = free.allocate(size, maxTimeToBlock);
 
             // Update the current time in case the buffer allocation blocked above.
@@ -220,18 +205,23 @@ public final class RecordAccumulator {
                 if (closed)
                     throw new KafkaException("Producer closed while send in progress");
 
+                // 尝试添加
                 RecordAppendResult appendResult = tryAppend(timestamp, key, value, headers, callback, dq, nowMs);
                 if (appendResult != null) {
                     // Somebody else found us a batch, return the one we waited for! Hopefully this doesn't happen often...
                     return appendResult;
                 }
 
+                // 开始 追加 没有 batch， 创建 batch
                 MemoryRecordsBuilder recordsBuilder = recordsBuilder(buffer, maxUsableMagic);
+                //
                 ProducerBatch batch = new ProducerBatch(tp, recordsBuilder, nowMs);
                 FutureRecordMetadata future = Objects.requireNonNull(batch.tryAppend(timestamp, key, value, headers,
                         callback, nowMs));
 
+                // 创建的 batch 放到 队尾
                 dq.addLast(batch);
+                // 放到 一个 set 集合
                 incomplete.add(batch);
 
                 // Don't deallocate this buffer in the finally block as it's being used in the record batch
@@ -241,6 +231,7 @@ public final class RecordAccumulator {
         } finally {
             if (buffer != null)
                 free.deallocate(buffer);
+            // +1
             appendsInProgress.decrementAndGet();
         }
     }
@@ -263,14 +254,18 @@ public final class RecordAccumulator {
      */
     private RecordAppendResult tryAppend(long timestamp, byte[] key, byte[] value, Header[] headers,
                                          Callback callback, Deque<ProducerBatch> deque, long nowMs) {
+        // 取出队列中最后一个批次
         ProducerBatch last = deque.peekLast();
+        // 如果有批次，即不是第一次加入数据
         if (last != null) {
+            // 往最后一个批次中尝试加入数据
             FutureRecordMetadata future = last.tryAppend(timestamp, key, value, headers, callback, nowMs);
             if (future == null)
                 last.closeForRecordAppends();
             else
                 return new RecordAppendResult(future, deque.size() > 1 || last.isFull(), false, false);
         }
+        // 第一次返回 null
         return null;
     }
 
@@ -441,6 +436,7 @@ public final class RecordAccumulator {
      * </ol>
      */
     public ReadyCheckResult ready(Cluster cluster, long nowMs) {
+        //准备就绪node集合    broker主机
         Set<Node> readyNodes = new HashSet<>();
         long nextReadyCheckDelayMs = Long.MAX_VALUE;
         Set<String> unknownLeaderTopics = new HashSet<>();
@@ -552,6 +548,7 @@ public final class RecordAccumulator {
             this.drainIndex = (this.drainIndex + 1) % parts.size();
 
             // Only proceed if the partition has no in-flight batches.
+            // 在内存里面没有要发送的 topic
             if (isMuted(tp))
                 continue;
 
@@ -566,16 +563,20 @@ public final class RecordAccumulator {
                     continue;
 
                 // first != null
+                // 上一次失败 距离现在发送的时间间隔 小于 延迟时间 retryBackoffMs
                 boolean backoff = first.attempts() > 0 && first.waitedTimeMs(now) < retryBackoffMs;
                 // Only drain the batch if it is not during backoff period.
                 if (backoff)
                     continue;
 
+                // 字节数的估计值 生产者 不压缩 是准确值
+                // 消息超过最大值 是不允许发送的
                 if (size + first.estimatedSizeInBytes() > maxSize && !ready.isEmpty()) {
                     // there is a rare case that a single batch size is larger than the request size due to
                     // compression; in this case we will still eventually send this batch in a single request
                     break;
                 } else {
+                    // shouldStopDrainBatchesForPartition 事务的一些判断
                     if (shouldStopDrainBatchesForPartition(first, tp))
                         break;
 
@@ -621,6 +622,8 @@ public final class RecordAccumulator {
      * Drain all the data for the given nodes and collate them into a list of batches that will fit within the specified
      * size on a per-node basis. This method attempts to avoid choosing the same topic-node over and over.
      *
+     * 抽取给定节点的所有数据，并将它们整理成一个批次列表，这些批次将适合每个节点的指定大小。这种方法试图避免一遍又一遍地选择相同的主题节点。
+     *
      * @param cluster The current cluster metadata
      * @param nodes The list of node to drain
      * @param maxSize The maximum number of bytes to drain
@@ -633,6 +636,7 @@ public final class RecordAccumulator {
 
         Map<Integer, List<ProducerBatch>> batches = new HashMap<>();
         for (Node node : nodes) {
+            // drainBatchesForOneNode 剔除 不需要发送的
             List<ProducerBatch> ready = drainBatchesForOneNode(cluster, node, maxSize, now);
             batches.put(node.id(), ready);
         }
@@ -654,9 +658,11 @@ public final class RecordAccumulator {
      * Get the deque for the given topic-partition, creating it if necessary.
      */
     private Deque<ProducerBatch> getOrCreateDeque(TopicPartition tp) {
+        // 获取当前 tp 下的 batch
         Deque<ProducerBatch> d = this.batches.get(tp);
         if (d != null)
             return d;
+        // 如果第一次，就创建一个新的队列
         d = new ArrayDeque<>();
         Deque<ProducerBatch> previous = this.batches.putIfAbsent(tp, d);
         if (previous == null)
@@ -729,6 +735,7 @@ public final class RecordAccumulator {
 
     /**
      * Check whether there are any pending batches (whether sent or unsent).
+     * 检查是否有任何待处理的批次（已发送或未发送）
      */
     public boolean hasIncomplete() {
         return !this.incomplete.isEmpty();
@@ -771,6 +778,7 @@ public final class RecordAccumulator {
                 dq.remove(batch);
             }
             batch.abort(reason);
+            // 释放
             deallocate(batch);
         }
     }
